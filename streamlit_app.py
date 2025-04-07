@@ -1,112 +1,157 @@
-# import the rquired libraries.
 import numpy as np
 import cv2
 from keras.models import load_model
 import streamlit as st
-from tensorflow import keras
 from tensorflow.keras.preprocessing.image import img_to_array
-from streamlit_webrtc import webrtc_streamer, VideoTransformerBase, RTCConfiguration, VideoProcessorBase, WebRtcMode
+from streamlit_webrtc import webrtc_streamer, VideoTransformerBase
+import base64
 
-# Define the emotions.
-emotion_labels = ['Angry','Disgust','Fear','Happy','Neutral', 'Sad', 'Surprise']
-
-# Load model.
-classifier =load_model('model_78.h5')
-
-# load weights into new model
+# ---------- Load Model ----------
+classifier = load_model('model_78.h5')
 classifier.load_weights("model_weights_78.h5")
 
-# Load face using OpenCV
-try:
-    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
-except Exception:
-    st.write("Error loading cascade classifiers")
+emotion_labels = ['Angry', 'Disgust', 'Fear', 'Happy', 'Neutral', 'Sad', 'Surprise']
+face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
 
+# ---------- Helper: Convert Image to Base64 ----------
+def get_base64_image(image_path):
+    with open(image_path, "rb") as f:
+        data = f.read()
+    return base64.b64encode(data).decode()
+
+# ---------- CSS Styling with Background ----------
+bg_image = get_base64_image("background.jpg")
+
+st.markdown(f"""
+<style>
+:root {{
+  --primary-bg: #0f0f0f;
+  --secondary-bg: #1c1c1c;
+  --accent: #fafafa;
+  --text-color: #eaeaea;
+  --muted-text: #cccccc;
+  --shadow-color: rgba(0,0,0,0.4);
+  --border-color: #444;
+}}
+
+.stApp {{
+  background: url("data:image/jpg;base64,{bg_image}");
+  background-size: cover;
+  background-attachment: fixed;
+  color: var(--text-color);
+}}
+
+.stApp::before {{
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: 100%;
+  background: var(--primary-bg);
+  opacity: 0.9;
+  z-index: -1;
+}}
+
+h1 {{
+  color: var(--accent);
+  text-align: center;
+  font-size: 2.5rem;
+}}
+
+h4 {{
+  color: var(--text-color);
+  text-align: center;
+  font-weight: 400;
+  opacity: 0.9;
+}}
+
+.info-box {{
+  background-color: transparent;
+  padding: 2rem;
+  
+  margin: 2rem auto;
+  max-width: 800px;
+  ;
+  border: none;
+}}
+
+.info-box h2 {{
+  color: var(--accent);
+  text-align: center;
+  margin-bottom: 1rem;
+}}
+
+.info-box p {{
+  color: var(--muted-text);
+  line-height: 1.8;
+  font-size: 1rem;
+}}
+
+.streamlit-webrtc video {{
+  width: 100% !important;
+  max-width: 500px;
+  border-radius: 12px;
+  margin: 1rem auto;
+  display: block;
+  border: 2px solid var(--border-color);
+}}
+</style>
+""", unsafe_allow_html=True)
+
+# ---------- Emotion Detection Logic ----------
 class VideoTransformer(VideoTransformerBase):
     def transform(self, frame):
         img = frame.to_ndarray(format="bgr24")
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        faces = face_cascade.detectMultiScale(gray, 1.3, 5)
 
-        #image gray
-        img_gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        faces = face_cascade.detectMultiScale(
-            image=img_gray, scaleFactor=1.3, minNeighbors=5)
         for (x, y, w, h) in faces:
-            cv2.rectangle(img=img, pt1=(x, y), pt2=(
-                x + w, y + h), color=(0, 255, 255), thickness=2)
-            roi_gray = img_gray[y:y + h, x:x + w]
+            cv2.rectangle(img, (x, y), (x+w, y+h), (255, 0, 255), 2)
+            roi_gray = gray[y:y+h, x:x+w]
             roi_gray = cv2.resize(roi_gray, (48, 48), interpolation=cv2.INTER_AREA)
+
             if np.sum([roi_gray]) != 0:
-                roi = roi_gray.astype('float') / 255.0
+                roi = roi_gray.astype("float") / 255.0
                 roi = img_to_array(roi)
                 roi = np.expand_dims(roi, axis=0)
                 prediction = classifier.predict(roi)[0]
-                maxindex = int(np.argmax(prediction))
-                finalout = emotion_labels[maxindex]
-                output = str(finalout)
-            label_position = (x, y-10)
-            cv2.putText(img, output, label_position, cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-
+                max_index = int(np.argmax(prediction))
+                emotion = emotion_labels[max_index]
+                cv2.putText(img, emotion, (x, y - 10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
         return img
 
-def main():
-    # Face Analysis Application #
-    st.title("Real Time Face Emotion Detection Application 😠🤮😨😀😐😔😮")
-    activiteis = ["Home", "Live Face Emotion Detection", "About"]
-    choice = st.sidebar.selectbox("Select Activity", activiteis)
-    st.sidebar.markdown(
-        """ Developed by Anish Johnson
-            [LinkedIn](https://www.linkedin.com/in/anish-johnson-594110208/)""")
+# ---------- Streamlit App ----------
+st.title("🎭 Real-Time Face Emotion Detection")
+st.markdown("<h4>Express yourself — we'll detect your emotion live!</h4>", unsafe_allow_html=True)
 
-    # Homepage.
-    if choice == "Home":
-        html_temp_home1 = """<div style="background-color:#FC4C02;padding:0.5px">
-                             <h4 style="color:white;text-align:center;">
-                            Start Your Real Time Face Emotion Detection.
-                             </h4>
-                             </div>
-                             </br>"""
+st.markdown("""
+<div class='info-box'>
+  <h2>🧠 How It Works</h2>
+  <p>This app captures live video from your webcam and uses deep learning to recognize your facial expression in real time.</p>
+  <p>Here's how it works step-by-step:</p>
+  <ul>
+    <li><strong>1.</strong> A video frame is captured using your webcam.</li>
+    <li><strong>2.</strong> <strong>OpenCV</strong> detects faces in the frame.</li>
+    <li><strong>3.</strong> Each detected face is resized and passed to a trained <strong>CNN</strong> model.</li>
+    <li><strong>4.</strong> The model predicts the emotion: Angry, Disgust, Fear, Happy, Neutral, Sad, or Surprise.</li>
+    <li><strong>5.</strong> The emotion label is displayed live above your face in the video.</li>
+  </ul>
+  <p><em>Note: Everything runs locally in your browser — no internet processing or external servers involved.</em></p>
+</div>
+""", unsafe_allow_html=True)
 
-        st.markdown(html_temp_home1, unsafe_allow_html=True)
-        st.write("""
-        * An average human spends about 10 to 15hrs a day staring at a computer screen, during which our facial expressions keep on changing. 
-        * Sometimes we laugh, sometimes we cry, sometimes we get angry, and sometimes get scared by our face when the camera turns on accidentally.
-        * But ever wondered; whether the computer that we give all this attention to is even capable of recognizing these emotions?
-        
-        Let's find out...
-        1. Click the dropdown list in the top left corner and select Live Face Emotion Detection.
-        2. This takes you to a page which will tell if it recognizes your emotions.
-                 """)
+webrtc_streamer(key="emotion-detect", video_processor_factory=VideoTransformer)
 
-    # Live Face Emotion Detection.
-    elif choice == "Live Face Emotion Detection":
-        st.header("Webcam Live Feed")
-        st.subheader('''
-        Welcome to the other side of the SCREEN!!!
-        * Get ready with all the emotions you can express. 
-        ''')
-        st.write("1. Click Start to open your camera and give permission for prediction")
-        st.write("2. This will predict your emotion.")
-        st.write("3. When you done, click stop to end.")
-        webrtc_streamer(key="example", video_processor_factory=VideoTransformer)
-
-    # About.
-    elif choice == "About":
-        st.subheader("About this app")
-        html_temp_about1= """<div style="background-color:#36454F;padding:30px">
-                                    <h4 style="color:white;">
-                                     This app predicts facial emotion using a Convolutional neural network.
-                                     Which is built using Keras and Tensorflow libraries.
-                                     Face detection is achived through openCV.
-                                    </h4>
-                                    </div>
-                                    </br>
-                                    """
-        st.markdown(html_temp_about1, unsafe_allow_html=True)
-
-
-    else:
-        pass
-
-
-if __name__ == "__main__":
-    main()
+st.markdown("""
+<div class='info-box'>
+  <h2>📌 About This Project</h2>
+  <p>This project demonstrates the power of real-time <strong>computer vision</strong> and <strong>deep learning</strong> applied to human emotion recognition.</p>
+  <p>It uses a <strong>Convolutional Neural Network (CNN)</strong> trained to classify facial expressions into seven basic emotions: 
+  <strong>Angry</strong>, <strong>Disgust</strong>, <strong>Fear</strong>, <strong>Happy</strong>, <strong>Neutral</strong>, <strong>Sad</strong>, and <strong>Surprise</strong>.</p>
+  <p>The video feed is processed frame by frame using <strong>OpenCV</strong> to detect faces, which are then classified using a model built with <strong>Keras</strong> and powered by <strong>TensorFlow</strong>.</p>
+  <p>Streamlit powers the interface — all processing is local, private, and interactive.</p>
+  <p>This project is ideal for education, demonstration, and exploring how AI understands facial cues.</p>
+</div>
+""", unsafe_allow_html=True)
